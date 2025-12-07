@@ -6,22 +6,27 @@
 
 ## Запуск
 
-Запускать из файла `Restaurant.java`
+Запуск происходит из файла `RestaurantGUI.java`.
 
-## Файлы 
+## Файлы
 
 | Файл | Описание |
 |------|----------|
-| `RestaurantGUI.java` | Главное окно (точка входа) |
-| `Restaurant.java` | Координатор компонентов |
-| `Waiter.java` | Официант (отдельный поток) |
-| `Kitchen.java` | Кухня (ExecutorService поваров) |
-| `ClientGenerator.java` | Генератор клиентов |
-| `Order.java` | Заказ с CompletableFuture |
-| `Dish.java` | Enum блюд |
 | `Constants.java` | Константы |
+| `Dish.java` | Enum блюд |
+| `Order.java` | Заказ с CompletableFuture |
+| `ClientGenerator.java` | Генератор клиентов |
+| `Waiter.java` | Официант (отдельный поток) |
+| `WaiterState.java` | Enum состояний официанта |
+| `WaiterVisual.java` | Визуализация официанта |
+| `Kitchen.java` | Кухня (ExecutorService поваров) |
+| `CookVisual.java` | Визуализация повара |
+| `FoodVisual.java` | Визуализация еды |
 | `TableManager.java` | Управление столами |
-| `*Visual.java` | Классы визуализации |
+| `TableVisual.java` | Визуализация стола |
+| `Restaurant.java` | Координатор компонентов |
+| `RestaurantPanel.java` | Панель отрисовки |
+| `RestaurantGUI.java` | Главное окно (точка входа) |
 
 ## Многопоточность
 
