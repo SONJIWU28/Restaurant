@@ -1,35 +1,74 @@
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Заказ клиента.
+ * Использует CompletableFuture для уведомления официанта о готовности.
+ */
 public class Order {
-    private static final AtomicInteger CNT = new AtomicInteger(0);
+    
+    private static final AtomicInteger COUNTER = new AtomicInteger(0);
 
     private final int id;
     private final int clientId;
-    private final Dish dish;
     private final int waiterId;
-    private final long time;
+    private final Dish dish;
+    private final boolean vip;
+    private final long createdAt;
     private final CompletableFuture<Order> ready = new CompletableFuture<>();
 
-    public Order(int clientId, Dish dish, int waiterId) {
-        this.id = CNT.incrementAndGet();
+    public Order(int clientId, Dish dish, int waiterId, boolean vip) {
+        this.id = COUNTER.incrementAndGet();
         this.clientId = clientId;
         this.dish = dish;
         this.waiterId = waiterId;
-        this.time = System.currentTimeMillis();
+        this.vip = vip;
+        this.createdAt = System.currentTimeMillis();
     }
 
-    public int getId() { return id; }
-    public int getClientId() { return clientId; }
-    public Dish getDish() { return dish; }
-    public int getWaiterId() { return waiterId; }
-    public CompletableFuture<Order> getReady() { return ready; }
-    public void done() { ready.complete(this); }
-    public long getWait() { return System.currentTimeMillis() - time; }
+    public int getClientId() {
+        return clientId;
+    }
 
+    public Dish getDish() {
+        return dish;
+    }
+
+    public boolean isVip() {
+        return vip;
+    }
+
+    public CompletableFuture<Order> getReady() {
+        return ready;
+    }
+
+    /**
+     * Помечает заказ как готовый.
+     * Вызывается поваром после приготовления.
+     */
+    public void done() {
+        ready.complete(this);
+    }
+
+    /**
+     * Время ожидания заказа в миллисекундах.
+     */
+    public long getWaitTime() {
+        return System.currentTimeMillis() - createdAt;
+    }
+
+    @Override
     public String toString() {
-        return "Заказ #" + id + " (" + dish + ", клиент " + clientId + ")";
+        String vipMark;
+        if (vip) {
+            vipMark = " [VIP]";
+        } else {
+            vipMark = "";
+        }
+        return "Заказ #" + id + vipMark + " (" + dish + ", клиент " + clientId + ")";
     }
 
-    public static void reset() { CNT.set(0); }
+    public static void reset() {
+        COUNTER.set(0);
+    }
 }

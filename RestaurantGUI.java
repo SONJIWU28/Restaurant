@@ -1,321 +1,402 @@
-import javax.swing.*;
 import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.concurrent.ThreadLocalRandom;
+import javax.swing.*;
 
+/**
+ * Главное окно симулятора ресторана.
+ */
 public class RestaurantGUI extends JFrame implements Waiter.WaiterCallback {
 
-    private static final int W = 1000, H = 700;
-    private static final int KITCHEN_Y = 480;
-    private static final int COUNTER_Y = KITCHEN_Y - 15;
-    private static final double SPEED = 5.0;
-
-    private JSpinner cooksSp, waitersSp, timeSp, clientsSp;
-    private JButton startBtn, stopBtn;
-    private JLabel statusLbl, statsLbl;
+    // UI компоненты
+    private JSpinner cooksSpinner;
+    private JSpinner waitersSpinner;
+    private JSpinner timeSpinner;
+    private JSpinner clientsSpinner;
+    private JButton startButton;
+    private JButton stopButton;
+    private JLabel statusLabel;
+    private JLabel statsLabel;
     private RestaurantPanel panel;
 
+    // Данные визуализации
     private final List<TableVisual> tables = Collections.synchronizedList(new ArrayList<>());
     private final List<WaiterVisual> waiters = new CopyOnWriteArrayList<>();
     private final List<CookVisual> cooks = new CopyOnWriteArrayList<>();
-    private final List<FoodVisual> counter = new CopyOnWriteArrayList<>();
 
-    private final Map<Integer, Integer> tableMap = new ConcurrentHashMap<>();
-    private final java.util.concurrent.atomic.AtomicInteger served = new java.util.concurrent.atomic.AtomicInteger(0);
-    private final java.util.concurrent.atomic.AtomicInteger total = new java.util.concurrent.atomic.AtomicInteger(0);
+    // Счётчики
+    private final java.util.concurrent.atomic.AtomicInteger servedCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final java.util.concurrent.atomic.AtomicInteger totalCount = new java.util.concurrent.atomic.AtomicInteger(0);
 
+    // Симуляция
     private Restaurant restaurant;
     private ScheduledExecutorService animator;
     private volatile boolean running = false;
+    private int targetClients = 0;
 
     public RestaurantGUI() {
         super("Ресторан");
         initTables();
-        setupUI();
+        initUI();
     }
+
     private void initTables() {
         tables.clear();
-        int x0 = 80, y0 = 70, dx = 140, dy = 95, id = 1;
-        for (int r = 0; r < 4; r++)
-            for (int c = 0; c < 5; c++)
-                tables.add(new TableVisual(id++, x0 + c * dx, y0 + r * dy));
+        int tableId = 1;
+
+        // Обычные столы
+        for (int row = 0; row < Constants.TABLE_ROWS; row++) {
+            for (int col = 0; col < Constants.TABLE_COLUMNS; col++) {
+                // Пропускаем VIP-зону в центре
+                boolean isVipArea = (row == 1 || row == 2) && (col == 2 || col == 3);
+                if (isVipArea) {
+                    continue;
+                }
+
+                int x = Constants.TABLE_START_X + col * Constants.TABLE_SPACING_X;
+                int y = Constants.TABLE_START_Y + row * Constants.TABLE_SPACING_Y;
+                
+                TableVisual table = new TableVisual(tableId++, x, y);
+                table.setCapacity(Constants.REGULAR_TABLE_CAPACITY);
+                table.setSize(Constants.REGULAR_TABLE_WIDTH, Constants.REGULAR_TABLE_HEIGHT);
+                tables.add(table);
+            }
+        }
+
+        // VIP стол
+        int vipX = Constants.TABLE_START_X + 2 * Constants.TABLE_SPACING_X - 30;
+        int vipY = Constants.TABLE_START_Y + Constants.TABLE_SPACING_Y + 15;
+        
+        TableVisual vipTable = new TableVisual(tableId, vipX, vipY);
+        vipTable.vipTable = true;
+        vipTable.setCapacity(Constants.VIP_TABLE_CAPACITY);
+        vipTable.setSize(Constants.VIP_TABLE_WIDTH, Constants.VIP_TABLE_HEIGHT);
+        tables.add(vipTable);
     }
 
-    private void setupUI() {
+    private void initUI() {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
-        setSize(W, H);
+        setSize(Constants.WINDOW_WIDTH, Constants.WINDOW_HEIGHT);
+        setMinimumSize(new Dimension(Constants.WINDOW_WIDTH, Constants.WINDOW_HEIGHT));
+        setResizable(false);
         setLocationRelativeTo(null);
 
-        JPanel main = new JPanel(new BorderLayout());
-        JPanel top = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
-        top.setBackground(new Color(45, 45, 50));
-
-        top.add(lbl("Повара:")); cooksSp = spin(1, 6, 2); top.add(cooksSp);
-        top.add(lbl("Официанты:")); waitersSp = spin(1, 5, 3); top.add(waitersSp);
-        top.add(lbl("Время(с):")); timeSp = spin(10, 300, 60); top.add(timeSp);
-        top.add(lbl("Клиенты:")); clientsSp = spin(5, 100, 20); top.add(clientsSp);
-
-        startBtn = btn("Старт", new Color(76, 175, 80));
-        startBtn.addActionListener(e -> start());
-        top.add(startBtn);
-
-        stopBtn = btn("Стоп", new Color(244, 67, 54));
-        stopBtn.setEnabled(false);
-        stopBtn.addActionListener(e -> stop());
-        top.add(stopBtn);
-
-        statusLbl = lbl("Готов"); top.add(statusLbl);
-        statsLbl = lbl(""); top.add(statsLbl);
-
-        main.add(top, BorderLayout.NORTH);
-        panel = new RestaurantPanel(KITCHEN_Y, tables, waiters, cooks, counter);
-        main.add(panel, BorderLayout.CENTER);
-        setContentPane(main);
+        JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(createControlPanel(), BorderLayout.NORTH);
+        
+        panel = new RestaurantPanel(tables, waiters, cooks);
+        mainPanel.add(panel, BorderLayout.CENTER);
+        
+        setContentPane(mainPanel);
     }
 
-    private JLabel lbl(String s) {
-        JLabel l = new JLabel(s);
-        l.setForeground(Color.WHITE);
-        return l;
+    private JPanel createControlPanel() {
+        JPanel controlPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
+        controlPanel.setBackground(Constants.COLOR_CONTROL_PANEL);
+
+        controlPanel.add(createLabel("Повара:"));
+        cooksSpinner = createSpinner(1, 6, 2);
+        controlPanel.add(cooksSpinner);
+
+        controlPanel.add(createLabel("Официанты:"));
+        waitersSpinner = createSpinner(1, 5, 3);
+        controlPanel.add(waitersSpinner);
+
+        controlPanel.add(createLabel("Время(с):"));
+        timeSpinner = createSpinner(10, 300, 60);
+        controlPanel.add(timeSpinner);
+
+        controlPanel.add(createLabel("Клиенты:"));
+        clientsSpinner = createSpinner(5, 100, 30);
+        controlPanel.add(clientsSpinner);
+
+        startButton = createButton("Старт", Constants.COLOR_BTN_START);
+        startButton.addActionListener(e -> startSimulation());
+        controlPanel.add(startButton);
+
+        stopButton = createButton("Стоп", Constants.COLOR_BTN_STOP);
+        stopButton.setEnabled(false);
+        stopButton.addActionListener(e -> stopSimulation());
+        controlPanel.add(stopButton);
+
+        statusLabel = createLabel("Готов");
+        controlPanel.add(statusLabel);
+
+        statsLabel = createLabel("");
+        controlPanel.add(statsLabel);
+
+        return controlPanel;
     }
 
-    private JSpinner spin(int min, int max, int val) {
-        return new JSpinner(new SpinnerNumberModel(val, min, max, 1));
+    private JLabel createLabel(String text) {
+        JLabel label = new JLabel(text);
+        label.setForeground(Color.WHITE);
+        label.setFont(new Font(Constants.FONT_NAME, Font.PLAIN, 12));
+        return label;
     }
 
-    private JButton btn(String s, Color bg) {
-        JButton b = new JButton(s);
-        b.setBackground(bg);
-        b.setForeground(Color.WHITE);
-        return b;
+    private JSpinner createSpinner(int min, int max, int value) {
+        JSpinner spinner = new JSpinner(new SpinnerNumberModel(value, min, max, 1));
+        spinner.setFont(new Font(Constants.FONT_NAME, Font.PLAIN, 12));
+        return spinner;
     }
 
-    private void start() {
+    private JButton createButton(String text, Color bgColor) {
+        JButton button = new JButton(text);
+        button.setBackground(bgColor);
+        button.setForeground(Color.WHITE);
+        button.setFont(new Font(Constants.FONT_NAME, Font.BOLD, 12));
+        button.setFocusPainted(false);
+        button.setBorderPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return button;
+    }
+
+    private void startSimulation() {
         reset();
-        int nc = (int) cooksSp.getValue();
-        int nw = (int) waitersSp.getValue();
-        int time = (int) timeSp.getValue();
-        int clients = (int) clientsSp.getValue();
 
-        initCooks(nc);
-        initWaiters(nw);
+        int numCooks = (int) cooksSpinner.getValue();
+        int numWaiters = (int) waitersSpinner.getValue();
+        int duration = (int) timeSpinner.getValue();
+        int numClients = (int) clientsSpinner.getValue();
+
+        targetClients = numClients;
+        initCooks(numCooks);
+        initWaiters(numWaiters);
 
         running = true;
-        startBtn.setEnabled(false);
-        stopBtn.setEnabled(true);
-        statusLbl.setText("Работает...");
+        startButton.setEnabled(false);
+        stopButton.setEnabled(true);
+        statusLabel.setText("Работает...");
 
-        restaurant = new Restaurant(nc, nw, 20, 15, clients);
+        restaurant = new Restaurant(numCooks, numWaiters, Constants.KITCHEN_SIZE, Constants.CLIENT_QUEUE, numClients);
         restaurant.setCallback(this);
 
+        // Аниматор
         animator = Executors.newSingleThreadScheduledExecutor();
         animator.scheduleAtFixedRate(() -> {
             if (running) {
-                moveWaiters();
+                updateWaiterPositions();
                 SwingUtilities.invokeLater(() -> {
-                    statsLbl.setText("Готово: " + served.get() + "/" + total.get());
+                    statsLabel.setText("Готово: " + servedCount.get() + "/" + totalCount.get());
                     panel.repaint();
                 });
             }
-        }, 0, 30, TimeUnit.MILLISECONDS);
+        }, 0, Constants.ANIMATION_INTERVAL_MS, TimeUnit.MILLISECONDS);
 
+        // Симуляция в отдельном потоке
         new Thread(() -> {
-            try { restaurant.runFor(time * 1000L); }
-            catch (InterruptedException ignored) {}
-            SwingUtilities.invokeLater(this::onEnd);
+            try {
+                restaurant.runFor(duration * 1000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            SwingUtilities.invokeLater(this::onSimulationEnd);
         }).start();
     }
 
     private void reset() {
-        synchronized (tables) {
-            for (TableVisual t : tables) {
-                t.hasClient = false;
-                t.hasFood = false;
-                t.clientId = 0;
-                t.waitingForFood = false;
-            }
-        }
         waiters.clear();
         cooks.clear();
-        counter.clear();
-        tableMap.clear();
-        served.set(0);
-        total.set(0);
+        servedCount.set(0);
+        totalCount.set(0);
+        TableManager.resetAll(tables);
     }
 
-    private void initCooks(int n) {
-        for (int i = 0; i < n; i++)
-            cooks.add(new CookVisual(i + 1, 150 + i * 120, KITCHEN_Y + 60, Color.WHITE));
-    }
-
-    private void initWaiters(int n) {
-        Color[] cols = {Color.BLUE, Color.RED, Color.GREEN, Color.ORANGE, Color.MAGENTA};
-        for (int i = 0; i < n; i++) {
-            int x = 180 + i * 90, y = COUNTER_Y - 30;
-            WaiterVisual w = new WaiterVisual(i + 1, x, y, cols[i % 5]);
-            w.homeX = x;
-            w.homeY = y;
-            waiters.add(w);
+    private void initCooks(int count) {
+        for (int i = 0; i < count; i++) {
+            int x = 150 + i * 120;
+            int y = Constants.KITCHEN_Y + 55;
+            cooks.add(new CookVisual(i + 1, x, y, Color.WHITE));
         }
     }
 
-    private void stop() {
-        running = false;
-        if (restaurant != null) new Thread(() -> restaurant.close()).start();
+    private void initWaiters(int count) {
+        Color[] colors = {Color.BLUE, Color.RED, Color.GREEN, Color.ORANGE, Color.MAGENTA};
+        
+        for (int i = 0; i < count; i++) {
+            int x = 180 + i * 90;
+            int y = Constants.COUNTER_Y - 35;
+            waiters.add(new WaiterVisual(i + 1, x, y, colors[i % colors.length]));
+        }
     }
 
-    private void onEnd() {
+    private void stopSimulation() {
         running = false;
-        if (animator != null) animator.shutdown();
+        if (restaurant != null) {
+            new Thread(() -> restaurant.close()).start();
+        }
+    }
 
-        // Очищаем всё
+    private void onSimulationEnd() {
+        running = false;
+        
+        if (animator != null) {
+            animator.shutdown();
+        }
+
         for (WaiterVisual w : waiters) {
-            w.state = WaiterState.IDLE;
-            w.x = w.homeX;
-            w.y = w.homeY;
-            w.hasFood = false;
-            w.notification = false;
+            w.reset();
         }
-        synchronized (tables) {
-            for (TableVisual t : tables) {
-                t.hasClient = false;
-                t.hasFood = false;
-                t.waitingForFood = false;
-            }
-        }
-        counter.clear();
-        tableMap.clear();
+        TableManager.resetAll(tables);
 
         panel.repaint();
-        startBtn.setEnabled(true);
-        stopBtn.setEnabled(false);
-        statusLbl.setText("Завершено");
+        startButton.setEnabled(true);
+        stopButton.setEnabled(false);
+        statusLabel.setText("Готово: " + servedCount.get() + "/" + targetClients);
     }
 
+    // ==================== CALLBACK ОТ ОФИЦИАНТОВ ====================
+
     @Override
-    public void onState(int id, String state) {
-        WaiterVisual w = waiters.stream().filter(x -> x.id == id).findFirst().orElse(null);
-        if (w == null) return;
+    public void onStateChanged(int waiterId, String state) {
+        WaiterVisual waiter = findWaiter(waiterId);
+        if (waiter == null) {
+            return;
+        }
 
         String[] parts = state.split(":");
-        String cmd = parts[0];
-        int clientId = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+        String command = parts[0];
+        
+        int clientId = 0;
+        if (parts.length > 1) {
+            try {
+                clientId = Integer.parseInt(parts[1]);
+            } catch (NumberFormatException e) {
+                return;
+            }
+        }
+        
+        boolean vip = parts.length > 2 && "1".equals(parts[2]);
 
-        switch (cmd) {
-            case "IDLE":
+        handleWaiterState(waiter, command, clientId, vip);
+    }
+
+    private WaiterVisual findWaiter(int id) {
+        for (WaiterVisual w : waiters) {
+            if (w.id == id) {
+                return w;
+            }
+        }
+        return null;
+    }
+
+    private void handleWaiterState(WaiterVisual w, String command, int clientId, boolean vip) {
+        switch (command) {
+            case "IDLE" -> {
                 w.state = WaiterState.IDLE;
                 w.targetX = w.homeX;
                 w.targetY = w.homeY;
                 w.hasFood = false;
-                w.notification = false;
-                break;
-
-            case "TO_TABLE":
-                total.incrementAndGet();
-                seat(clientId); // теперь случайный выбор свободного стола
-                Integer ti = tableMap.get(clientId);
-                if (ti != null) {
-                    TableVisual t = tables.get(ti);
-                    w.state = WaiterState.GOING_TO_TABLE;
-                    w.targetX = t.x + 25;
-                    w.targetY = t.y + 40;
-                    w.currentClientId = clientId;
-                    w.notification = true;
+                w.awaitingArrival = false;
+            }
+            
+            case "TO_TABLE" -> {
+                totalCount.incrementAndGet();
+                TableVisual table = TableManager.findFreeTable(tables, vip);
+                if (table != null) {
+                    int seatIdx = TableManager.findFreeSeatIndex(table);
+                    if (seatIdx >= 0) {
+                        TableVisual.Seat seat = table.seats.get(seatIdx);
+                        seat.clientId = clientId;
+                        seat.vip = vip;
+                        
+                        Point pos = getSeatPosition(table, seatIdx);
+                        w.state = WaiterState.GOING_TO_TABLE;
+                        w.targetX = pos.x;
+                        w.targetY = pos.y - 25;
+                        w.currentClientId = clientId;
+                        w.awaitingArrival = true;
+                    }
                 }
-                break;
-
-            case "TO_KITCHEN":
-                ti = tableMap.get(clientId);
-                if (ti != null) tables.get(ti).waitingForFood = true;
+            }
+            
+            case "TO_KITCHEN" -> {
+                TableManager.setWaitingForFood(tables, clientId);
                 w.state = WaiterState.GOING_TO_KITCHEN;
                 w.targetX = w.homeX;
-                // Остановка перед линией выдачи
-                w.targetY = COUNTER_Y - 8;
-                w.notification = true;
-                break;
-
-            case "WAIT":
+                w.targetY = Constants.COUNTER_Y - 15;
+                w.awaitingArrival = true;
+            }
+            
+            case "WAIT" -> {
                 w.state = WaiterState.WAITING_FOR_FOOD;
-                w.notification = false;
-                break;
-
-            case "DELIVER":
-                ti = tableMap.get(clientId);
-                if (ti != null) {
-                    TableVisual t = tables.get(ti);
+                w.awaitingArrival = false;
+            }
+            
+            case "DELIVER" -> {
+                TableVisual table = TableManager.findTableByClient(tables, clientId);
+                if (table != null) {
+                    TableVisual.Seat seat = TableManager.findSeatByClient(tables, clientId);
+                    int seatIdx = table.seats.indexOf(seat);
+                    Point pos = getSeatPosition(table, seatIdx);
+                    
                     w.state = WaiterState.DELIVERING;
-                    w.targetX = t.x + 25;
-                    w.targetY = t.y + 40;
+                    w.targetX = pos.x;
+                    w.targetY = pos.y - 25;
                     w.hasFood = true;
-                    w.notification = true;
+                    w.awaitingArrival = true;
                 }
-                break;
-
-            case "DONE":
-                ti = tableMap.get(clientId);
-                if (ti != null) {
-                    TableVisual t = tables.get(ti);
-                    t.hasFood = true;
-                    t.waitingForFood = false;
-                    int idx = ti;
-                    CompletableFuture.delayedExecutor(1500, TimeUnit.MILLISECONDS).execute(() -> {
-                        synchronized (tables) {
-                            if (idx < tables.size()) {
-                                tables.get(idx).hasClient = false;
-                                tables.get(idx).hasFood = false;
-                            }
-                        }
-                        tableMap.remove(clientId);
-                    });
-                }
-                served.incrementAndGet();
+            }
+            
+            case "DONE" -> {
+                TableManager.setHasFood(tables, clientId);
+                servedCount.incrementAndGet();
+                ClientGenerator.served();
                 w.hasFood = false;
-                w.notification = false;
-                break;
-
-            case "RETURN":
+                w.awaitingArrival = false;
+                
+                // Клиент уходит через некоторое время
+                int cid = clientId;
+                CompletableFuture.delayedExecutor(Constants.CLIENT_LEAVE_DELAY_MS, TimeUnit.MILLISECONDS)
+                    .execute(() -> TableManager.releaseSeat(tables, cid));
+            }
+            
+            case "RETURN" -> {
                 w.state = WaiterState.RETURNING;
                 w.targetX = w.homeX;
                 w.targetY = w.homeY;
-                w.notification = true;
-                break;
-        }
-    }
-
-    private void seat(int clientId) {
-        List<Integer> free = new ArrayList<>();
-        synchronized (tables) {
-            for (int i = 0; i < tables.size(); i++) {
-                if (!tables.get(i).hasClient) free.add(i);
+                w.awaitingArrival = true;
             }
-            if (free.isEmpty()) return;
-            int idx = free.get(ThreadLocalRandom.current().nextInt(free.size()));
-            TableVisual t = tables.get(idx);
-            t.hasClient = true;
-            t.clientId = clientId;
-            tableMap.put(clientId, idx);
         }
     }
 
-    private void moveWaiters() {
+    private Point getSeatPosition(TableVisual table, int seatIndex) {
+        if (table.vipTable) {
+            int cx = table.x + table.width / 2;
+            int[] offsets = {-70, 0, 70};
+            if (seatIndex < 3) {
+                return new Point(cx + offsets[seatIndex], table.y - 8);
+            } else {
+                return new Point(cx + offsets[seatIndex - 3], table.y + table.height + 20);
+            }
+        } else {
+            int cy = table.y + table.height / 2;
+            if (seatIndex == 0) {
+                return new Point(table.x - 18, cy);
+            } else {
+                return new Point(table.x + table.width + 18, cy);
+            }
+        }
+    }
+
+    private void updateWaiterPositions() {
         for (WaiterVisual w : waiters) {
-            double targetX = w.targetX;
-            double targetY = Math.min(w.targetY, COUNTER_Y - 8);
+            double dx = w.targetX - w.x;
+            double dy = w.targetY - w.y;
+            double distance = Math.sqrt(dx * dx + dy * dy);
 
-            double dx = targetX - w.x;
-            double dy = targetY - w.y;
-            double dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist > 3) {
-                w.x += (dx / dist) * SPEED;
-                w.y += (dy / dist) * SPEED;
-            } else if (w.notification) {
-                w.notification = false;
+            if (distance > 3) {
+                w.x += (dx / distance) * Constants.WAITER_SPEED;
+                w.y += (dy / distance) * Constants.WAITER_SPEED;
+            } else if (w.awaitingArrival) {
+                w.awaitingArrival = false;
                 if (restaurant != null) {
-                    Waiter real = restaurant.getWaiter(w.id);
-                    if (real != null) real.notifyArrived();
+                    Waiter waiter = restaurant.getWaiter(w.id);
+                    if (waiter != null) {
+                        waiter.notifyArrived();
+                    }
                 }
             }
         }

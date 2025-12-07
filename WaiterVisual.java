@@ -1,15 +1,24 @@
 import java.awt.Color;
 
+/**
+ * Визуальное представление официанта.
+ */
 public class WaiterVisual {
-    public int id;
-    public double x, y;
-    public double targetX, targetY;
-    public double homeX, homeY;
-    public Color color;
-    public boolean hasFood;
+    
+    public final int id;
+    public final Color color;
+    
+    public double x;
+    public double y;
+    public double targetX;
+    public double targetY;
+    public double homeX;
+    public double homeY;
+    
     public WaiterState state = WaiterState.IDLE;
-    public int currentClientId;
-    public boolean notification = false;
+    public int currentClientId = 0;
+    public boolean hasFood = false;
+    public boolean awaitingArrival = false;
 
     public WaiterVisual(int id, double x, double y, Color color) {
         this.id = id;
@@ -17,11 +26,19 @@ public class WaiterVisual {
         this.y = y;
         this.targetX = x;
         this.targetY = y;
+        this.homeX = x;
+        this.homeY = y;
         this.color = color;
     }
 
-    public void setTarget(double tx, double ty) {
-        this.targetX = tx;
-        this.targetY = ty;
+    public void reset() {
+        x = homeX;
+        y = homeY;
+        targetX = homeX;
+        targetY = homeY;
+        state = WaiterState.IDLE;
+        currentClientId = 0;
+        hasFood = false;
+        awaitingArrival = false;
     }
 }

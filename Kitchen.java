@@ -2,23 +2,25 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Кухня ресторана.
+ * 
+ * Реализует пул поваров через ExecutorService.
+ * Заказы поступают через BlockingQueue и обрабатываются параллельно.
+ */
 public class Kitchen {
-    private final BlockingQueue<Order> queue;
-    private final ExecutorService cooks;
+    
+    private final int maxQueueSize;
+    private final BlockingQueue<Order> orderQueue;
+    private final ExecutorService cookPool;
     private final Thread dispatcher;
     private final AtomicBoolean open = new AtomicBoolean(false);
-    private final int size;
 
-    public Kitchen(int cookNum, int queueSize) {
-        this.size = queueSize;
-        this.queue = new LinkedBlockingQueue<>(queueSize);
-        this.cooks = Executors.newFixedThreadPool(cookNum, new ThreadFactory() {
-            private final AtomicInteger n = new AtomicInteger(0);
-            public Thread newThread(Runnable r) {
-                return new Thread(r, "Повар-" + n.incrementAndGet());
-            }
-        });
-        this.dispatcher = new Thread(this::dispatch, "Диспетчер");
+    public Kitchen(int cookCount, int queueSize) {
+        this.maxQueueSize = queueSize;
+        this.orderQueue = new LinkedBlockingQueue<>(queueSize);
+        this.cookPool = Executors.newFixedThreadPool(cookCount, new CookThreadFactory());
+        this.dispatcher = new Thread(this::dispatchOrders, "Диспетчер");
     }
 
     public void start() {
@@ -28,50 +30,118 @@ public class Kitchen {
         }
     }
 
-    private void dispatch() {
-        while (open.get() || !queue.isEmpty()) {
+    /**
+     * Добавить заказ в очередь кухни.
+     */
+    public boolean addOrder(Order order) {
+        if (!open.get()) {
+            return false;
+        }
+        
+        boolean accepted = orderQueue.offer(order);
+        int queueSize = orderQueue.size();
+        
+        if (accepted) {
+            String loadStatus = getLoadStatus(queueSize);
+            System.out.println("[КУХНЯ] Принят: " + order + " | Очередь: " + queueSize + "/" + maxQueueSize + loadStatus);
+        } else {
+            System.out.println("[КУХНЯ] Очередь полная, отклонён: " + order);
+        }
+        
+        return accepted;
+    }
+
+    private String getLoadStatus(int queueSize) {
+        double load = (double) queueSize / maxQueueSize;
+        if (load > 0.8) {
+            return " [КРИТИЧЕСКАЯ ЗАГРУЗКА]";
+        }
+        if (load > 0.5) {
+            return " [Высокая загрузка]";
+        }
+        return "";
+    }
+
+    /**
+     * Диспетчер — раздаёт заказы поварам.
+     */
+    private void dispatchOrders() {
+        while (open.get() || !orderQueue.isEmpty()) {
             try {
-                Order o = queue.poll(200, TimeUnit.MILLISECONDS);
-                if (o != null) cooks.submit(() -> cook(o));
+                Order order = orderQueue.poll(200, TimeUnit.MILLISECONDS);
+                if (order != null) {
+                    cookPool.submit(() -> cook(order));
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                break;
+            } catch (RejectedExecutionException e) {
+                System.out.println("[КУХНЯ] Повара перегружены");
                 break;
             }
         }
     }
 
-    private void cook(Order o) {
-        String name = Thread.currentThread().getName();
-        System.out.println("[" + name + "] Готовит: " + o);
+    /**
+     * Приготовление блюда.
+     */
+    private void cook(Order order) {
+        String cookName = Thread.currentThread().getName();
+        System.out.println("[" + cookName + "] Готовит: " + order);
+        
         try {
-            int t = o.getDish().getTime();
-            Thread.sleep(t);
-            System.out.println("[" + name + "] Готово: " + o + " (" + t + " мс)");
-            o.done();
+            int cookTime = order.getDish().getTime();
+            if (order.isVip()) {
+                cookTime = (int) (cookTime * Constants.VIP_COOK_MULTIPLIER);
+            }
+            
+            Thread.sleep(cookTime);
+            
+            System.out.println("[" + cookName + "] Готово: " + order + " (" + cookTime + " мс)");
+            order.done();
+            
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            System.out.println("[" + cookName + "] Прерван: " + order);
         }
-    }
-
-    public boolean add(Order o) {
-        if (!open.get()) return false;
-        boolean ok = queue.offer(o);
-        if (ok) System.out.println("[КУХНЯ] Принят: " + o + " | Очередь: " + queue.size() + "/" + size);
-        return ok;
     }
 
     public void shutdown() {
         System.out.println("[КУХНЯ] Закрывается...");
         open.set(false);
+        
         try {
             dispatcher.join(5000);
-            cooks.shutdown();
-            cooks.awaitTermination(10, TimeUnit.SECONDS);
+            cookPool.shutdown();
+            
+            if (!cookPool.awaitTermination(10, TimeUnit.SECONDS)) {
+                cookPool.shutdownNow();
+                System.out.println("[КУХНЯ] Принудительное завершение");
+            }
         } catch (InterruptedException e) {
-            cooks.shutdownNow();
+            cookPool.shutdownNow();
+            Thread.currentThread().interrupt();
         }
+        
         System.out.println("[КУХНЯ] Закрыта");
     }
 
-    public boolean isOpen() { return open.get(); }
+    public boolean isOpen() {
+        return open.get();
+    }
+
+    public int getQueueSize() {
+        return orderQueue.size();
+    }
+
+    private static class CookThreadFactory implements ThreadFactory {
+        private final AtomicInteger counter = new AtomicInteger(0);
+
+        @Override
+        public Thread newThread(Runnable r) {
+            int idx = counter.getAndIncrement();
+            String name = Constants.COOK_NAMES[idx % Constants.COOK_NAMES.length];
+            return new Thread(r, name);
+        }
+    }
 }

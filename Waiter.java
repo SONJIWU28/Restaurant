@@ -1,97 +1,157 @@
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Официант ресторана.
+ * 
+ * Каждый официант работает в отдельном потоке.
+ * Цикл работы: взять заказ → посадить клиента → отнести на кухню → 
+ *              дождаться готовности → доставить клиенту.
+ */
 public class Waiter implements Runnable {
+    
     private final int id;
-    private final BlockingQueue<Request> queue;
+    private final BlockingDeque<ClientRequest> clientQueue;
     private final Kitchen kitchen;
-    private final AtomicBoolean work = new AtomicBoolean(true);
-
+    private final AtomicBoolean working = new AtomicBoolean(true);
+    
     private WaiterCallback callback;
-    private volatile CompletableFuture<Void> arrived;
+    private volatile CompletableFuture<Void> arrivedSignal;
 
-    public Waiter(int id, BlockingQueue<Request> queue, Kitchen kitchen) {
+    public Waiter(int id, BlockingDeque<ClientRequest> clientQueue, Kitchen kitchen) {
         this.id = id;
-        this.queue = queue;
+        this.clientQueue = clientQueue;
         this.kitchen = kitchen;
     }
 
-    public void setCallback(WaiterCallback cb) { this.callback = cb; }
-
-    private void state(String s) {
-        if (callback != null) callback.onState(id, s);
+    public void setCallback(WaiterCallback callback) {
+        this.callback = callback;
     }
 
-    public void notifyArrived() {
-        if (arrived != null) arrived.complete(null);
+    public int getId() {
+        return id;
     }
 
-    private void waitArrival() {
-        arrived = new CompletableFuture<>();
-        try {
-            arrived.get(10, TimeUnit.SECONDS);
-        } catch (Exception e) {}
-    }
-
+    @Override
     public void run() {
         Thread.currentThread().setName("Официант-" + id);
         System.out.println("[Официант-" + id + "] Начал смену");
 
-        while (work.get() || !queue.isEmpty()) {
+        while (working.get() || !clientQueue.isEmpty()) {
             try {
-                state("IDLE");
-                Request req = queue.poll(300, TimeUnit.MILLISECONDS);
-                if (req == null) continue;
-
-                System.out.println("[Официант-" + id + "] Принял: " + req);
-                state("TO_TABLE:" + req.clientId);
-                waitArrival();
-
-                Order order = new Order(req.clientId, req.dish, id);
-                state("TO_KITCHEN:" + req.clientId);
-                waitArrival();
-
-                if (!kitchen.add(order)) {
-                    System.out.println("[Официант-" + id + "] Кухня отклонила");
-                    continue;
-                }
-
-                state("WAIT:" + req.clientId);
-                Order ready = order.getReady().orTimeout(60, TimeUnit.SECONDS).join();
-
-                state("DELIVER:" + req.clientId);
-                waitArrival();
-
-                System.out.println("[Официант-" + id + "] Доставил: " + ready.getDish() +
-                        " клиенту " + ready.getClientId() + " (" + ready.getWait() + " мс)");
-
-                state("DONE:" + req.clientId);
-
-                state("RETURN:" + req.clientId);
-                waitArrival();
-
+                processNextClient();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
-            } catch (Exception e) {
-                System.out.println("[Официант-" + id + "] Ошибка: " + e.getMessage());
             }
         }
+        
         System.out.println("[Официант-" + id + "] Закончил смену");
     }
 
+    private void processNextClient() throws InterruptedException {
+        sendState("IDLE");
+        
+        ClientRequest request = clientQueue.poll(Constants.WAITER_POLL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        if (request == null) {
+            return;
+        }
+
+        System.out.println("[Официант-" + id + "] Принял: " + request);
+
+        // Ведём клиента к столу
+        String vipFlag;
+        if (request.vip()) {
+            vipFlag = "1";
+        } else {
+            vipFlag = "0";
+        }
+        sendState("TO_TABLE:" + request.clientId() + ":" + vipFlag);
+        waitForArrival();
+
+        // Создаём заказ и несём на кухню
+        Order order = new Order(request.clientId(), request.dish(), id, request.vip());
+        sendState("TO_KITCHEN:" + request.clientId());
+        waitForArrival();
+
+        // Отдаём заказ на кухню
+        if (!kitchen.addOrder(order)) {
+            System.out.println("[Официант-" + id + "] Кухня отклонила заказ");
+            return;
+        }
+        // Ждём готовности
+        sendState("WAIT:" + request.clientId());
+        
+        try {
+            Order ready = order.getReady()
+                .orTimeout(Constants.ORDER_TIMEOUT_SEC, TimeUnit.SECONDS)
+                .join();
+            // Несём еду клиенту
+            sendState("DELIVER:" + request.clientId());
+            waitForArrival();
+            System.out.println("[Официант-" + id + "] Доставил: " + ready.getDish() + 
+                " клиенту " + ready.getClientId() + " (" + ready.getWaitTime() + " мс)");
+
+            sendState("DONE:" + request.clientId());
+
+            // Возвращаемся на базу
+            sendState("RETURN:" + request.clientId());
+            waitForArrival();
+
+        } catch (CompletionException e) {
+            System.out.println("[Официант-" + id + "] Таймаут заказа для клиента " + request.clientId());
+        }
+    }
+
+    private void sendState(String state) {
+        if (callback != null) {
+            callback.onStateChanged(id, state);
+        }
+    }
+
+    public void notifyArrived() {
+        if (arrivedSignal != null) {
+            arrivedSignal.complete(null);
+        }
+    }
+
+    private void waitForArrival() {
+        arrivedSignal = new CompletableFuture<>();
+        try {
+            arrivedSignal.get(Constants.WAITER_ARRIVAL_TIMEOUT_SEC, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            System.out.println("[Официант-" + id + "] Таймаут движения");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (ExecutionException e) {
+            System.out.println("[Официант-" + id + "] Ошибка: " + e.getMessage());
+        }
+    }
+
     public void stop() {
-        work.set(false);
-        if (arrived != null) arrived.complete(null);
+        working.set(false);
+        if (arrivedSignal != null) {
+            arrivedSignal.complete(null);
+        }
     }
 
-    public int getId() { return id; }
-
-    public record Request(int clientId, Dish dish) {
-        public String toString() { return "Клиент " + clientId + " -> " + dish; }
+    public record ClientRequest(int clientId, Dish dish, boolean vip) {
+        @Override
+        public String toString() {
+            String prefix;
+            if (vip) {
+                prefix = "[VIP] ";
+            } else {
+                prefix = "";
+            }
+            return prefix + "Клиент " + clientId + " -> " + dish;
+        }
     }
 
+    /**
+     * Callback для уведомления GUI о состоянии официанта.
+     */
     public interface WaiterCallback {
-        void onState(int waiterId, String state);
+        void onStateChanged(int waiterId, String state);
     }
 }

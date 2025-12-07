@@ -1,33 +1,21 @@
-import javax.swing.*;
 import java.awt.*;
 import java.util.List;
+import javax.swing.*;
+
+/**
+ * Панель визуализации ресторана.
+ */
 public class RestaurantPanel extends JPanel {
-
-    private static final Color BG_FLOOR = new Color(173, 216, 230);
-    private static final Color TABLE_COLOR = new Color(139, 90, 43);
-    private static final Color CHAIR_COLOR = new Color(160, 82, 45);
-    private static final Color KITCHEN_BG = new Color(70, 70, 75);
-    private static final Color KITCHEN_FLOOR = new Color(90, 90, 95);
-    private static final Color COUNTER_COLOR = new Color(60, 60, 65);
-
-    private final int KITCHEN_Y;
-    private final int COUNTER_Y;
 
     private final List<TableVisual> tables;
     private final List<WaiterVisual> waiters;
     private final List<CookVisual> cooks;
-    private final List<FoodVisual> counter;
 
-    public RestaurantPanel(int kitchenY, List<TableVisual> tables,
-                           List<WaiterVisual> waiters, List<CookVisual> cooks,
-                           List<FoodVisual> counter) {
-        this.KITCHEN_Y = kitchenY;
-        this.COUNTER_Y = kitchenY - 15;
+    public RestaurantPanel(List<TableVisual> tables, List<WaiterVisual> waiters, List<CookVisual> cooks) {
         this.tables = tables;
         this.waiters = waiters;
         this.cooks = cooks;
-        this.counter = counter;
-        setBackground(BG_FLOOR);
+        setBackground(Constants.COLOR_BACKGROUND);
     }
 
     @Override
@@ -38,7 +26,6 @@ public class RestaurantPanel extends JPanel {
 
         drawKitchen(g2);
         drawTables(g2);
-        drawFoodOnCounter(g2);
         drawCooks(g2);
         drawWaiters(g2);
         drawLegend(g2);
@@ -47,26 +34,26 @@ public class RestaurantPanel extends JPanel {
     private void drawKitchen(Graphics2D g2) {
         int w = getWidth();
 
-        g2.setColor(KITCHEN_FLOOR);
-        g2.fillRect(0, KITCHEN_Y, w, getHeight() - KITCHEN_Y);
+        // Фон кухни
+        g2.setColor(new Color(90, 90, 95));
+        g2.fillRect(0, Constants.KITCHEN_Y, w, 200);
 
-        g2.setColor(KITCHEN_BG);
-        g2.fillRect(0, KITCHEN_Y, w, 20);
+        // Верхняя граница
+        g2.setColor(Constants.COLOR_KITCHEN_BG);
+        g2.fillRect(0, Constants.KITCHEN_Y, w, 20);
 
-        g2.setColor(COUNTER_COLOR);
-        g2.fillRoundRect(100, COUNTER_Y - 10, w - 200, 25, 8, 8);
-        g2.setColor(new Color(80, 80, 85));
-        g2.fillRoundRect(105, COUNTER_Y - 7, w - 210, 8, 4, 4);
+        // Стол раздачи
+        g2.setColor(Constants.COLOR_COUNTER);
+        g2.fillRoundRect(100, Constants.COUNTER_Y, w - 200, 25, 8, 8);
 
-        g2.setColor(new Color(200, 200, 200));
-        g2.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        g2.drawString("КУХНЯ", w / 2 - 25, KITCHEN_Y + 80);
-
+        // Плиты
         for (int i = 0; i < 4; i++) {
             int px = 120 + i * 150;
-            int py = KITCHEN_Y + 40;
+            int py = Constants.KITCHEN_Y + 40;
+            
             g2.setColor(new Color(50, 50, 55));
             g2.fillRoundRect(px, py, 80, 50, 6, 6);
+            
             g2.setColor(new Color(40, 40, 45));
             g2.fillOval(px + 10, py + 10, 25, 25);
             g2.fillOval(px + 45, py + 10, 25, 25);
@@ -75,186 +62,218 @@ public class RestaurantPanel extends JPanel {
 
     private void drawTables(Graphics2D g2) {
         synchronized (tables) {
-            for (TableVisual t : tables) {
-                drawTable(g2, t);
+            for (TableVisual table : tables) {
+                drawTable(g2, table);
             }
         }
     }
 
     private void drawTable(Graphics2D g2, TableVisual t) {
-        int x = t.x, y = t.y;
-        int tw = 50, th = 32;
-
+        // Тень
         g2.setColor(new Color(0, 0, 0, 30));
-        g2.fillRoundRect(x + 3, y + 3, tw, th, 6, 6);
+        g2.fillRoundRect(t.x + 3, t.y + 3, t.width, t.height, 8, 8);
 
-        g2.setColor(TABLE_COLOR);
-        g2.fillRoundRect(x, y, tw, th, 6, 6);
-        g2.setColor(TABLE_COLOR.darker());
-        g2.setStroke(new BasicStroke(1.5f));
-        g2.drawRoundRect(x, y, tw, th, 6, 6);
-
-        g2.setColor(CHAIR_COLOR);
-        g2.fillRoundRect(x - 12, y + 6, 10, 20, 4, 4);
-        g2.fillRoundRect(x + tw + 2, y + 6, 10, 20, 4, 4);
-
-        if (t.hasClient) {
-            drawClient(g2, x + tw / 2, y - 20, t.clientId, t.waitingForFood);
+        // Стол
+        Color tableColor;
+        if (t.vipTable) {
+            tableColor = Constants.COLOR_TABLE_VIP;
+        } else {
+            tableColor = Constants.COLOR_TABLE;
         }
+        g2.setColor(tableColor);
+        g2.fillRoundRect(t.x, t.y, t.width, t.height, 8, 8);
+        g2.setColor(tableColor.darker());
+        g2.drawRoundRect(t.x, t.y, t.width, t.height, 8, 8);
 
-        if (t.hasFood) {
-            drawPlate(g2, x + 15, y + 6);
+        // Стулья
+        drawChairs(g2, t);
+
+        // Клиенты
+        for (int i = 0; i < t.seats.size(); i++) {
+            TableVisual.Seat seat = t.seats.get(i);
+            if (!seat.isFree()) {
+                Point pos = getSeatPosition(t, i);
+                drawClient(g2, pos.x, pos.y, seat);
+            }
+            if (seat.hasFood) {
+                Point pos = getSeatPosition(t, i);
+                drawPlate(g2, pos.x - 8, pos.y + 18);
+            }
         }
     }
 
-    private void drawClient(Graphics2D g2, int x, int y, int id, boolean waiting) {
-        Color bodyColor = waiting ? new Color(255, 200, 100) : new Color(100, 200, 100);
+    private void drawChairs(Graphics2D g2, TableVisual t) {
+        g2.setColor(Constants.COLOR_CHAIR);
+        
+        if (t.vipTable) {
+            int cx = t.x + t.width / 2;
+            int[] offsets = {-70, 0, 70};
+            for (int offset : offsets) {
+                g2.fillRoundRect(cx + offset - 6, t.y - 16, 12, 14, 4, 4);
+                g2.fillRoundRect(cx + offset - 6, t.y + t.height + 2, 12, 14, 4, 4);
+            }
+        } else {
+            int cy = t.y + t.height / 2;
+            g2.fillRoundRect(t.x - 12, cy - 8, 10, 16, 3, 3);
+            g2.fillRoundRect(t.x + t.width + 2, cy - 8, 10, 16, 3, 3);
+        }
+    }
+
+    private Point getSeatPosition(TableVisual t, int seatInd) {
+        if (t.vipTable) {
+            int cx = t.x + t.width / 2;
+            int[] offsets = {-70, 0, 70};
+            if (seatInd < 3) {
+                return new Point(cx + offsets[seatInd], t.y - 8);
+            } else {
+                return new Point(cx + offsets[seatInd - 3], t.y + t.height + 20);
+            }
+        } else {
+            int cy = t.y + t.height / 2;
+            if (seatInd == 0) {
+                return new Point(t.x - 18, cy);
+            } else {
+                return new Point(t.x + t.width + 18, cy);
+            }
+        }
+    }
+
+    private void drawClient(Graphics2D g2, int x, int y, TableVisual.Seat seat) {
+        // Цвет тела
+        Color bodyColor;
+        if (seat.vip) {
+            bodyColor = Constants.COLOR_CLIENT_VIP;
+        } else if (seat.waitingForFood) {
+            bodyColor = Constants.COLOR_CLIENT_WAITING;
+        } else {
+            bodyColor = Constants.COLOR_CLIENT_READY;
+        }
+
+        // Тело
         g2.setColor(bodyColor);
-        g2.fillOval(x - 10, y + 8, 20, 24);
+        g2.fillOval(x - 10, y, 20, 22);
 
-        g2.setColor(new Color(255, 220, 185));
-        g2.fillOval(x - 8, y - 6, 16, 16);
+        // Голова
+        g2.setColor(Constants.COLOR_SKIN);
+        g2.fillOval(x - 7, y - 12, 14, 14);
 
-        g2.setColor(new Color(80, 60, 40));
-        g2.fillArc(x - 8, y - 8, 16, 12, 0, 180);
+        // Волосы
+        g2.setColor(Constants.COLOR_HAIR);
+        g2.fillArc(x - 7, y - 14, 14, 10, 0, 180);
 
+        // Корона VIP
+        if (seat.vip) {
+            g2.setColor(Constants.COLOR_VIP_CROWN);
+            g2.fillPolygon(
+                new int[]{x - 5, x, x + 5}, 
+                new int[]{y - 10, y - 17, y - 10}, 
+                3
+            );
+        }
+
+        // Номер клиента
         g2.setColor(Color.WHITE);
-        g2.setFont(new Font("Arial", Font.BOLD, 9));
-        String s = String.valueOf(id);
-        int sw = g2.getFontMetrics().stringWidth(s);
-        g2.drawString(s, x - sw / 2, y + 24);
+        g2.setFont(new Font(Constants.FONT_NAME, Font.BOLD, 8));
+        String idStr = String.valueOf(seat.clientId);
+        int textWidth = g2.getFontMetrics().stringWidth(idStr);
+        g2.drawString(idStr, x - textWidth / 2, y + 15);
     }
 
     private void drawPlate(Graphics2D g2, int x, int y) {
         g2.setColor(Color.WHITE);
-        g2.fillOval(x, y, 22, 18);
-        g2.setColor(new Color(230, 230, 230));
-        g2.drawOval(x, y, 22, 18);
+        g2.fillOval(x, y, 16, 10);
         g2.setColor(new Color(180, 80, 60));
-        g2.fillOval(x + 5, y + 4, 12, 10);
-    }
-
-    private void drawFoodOnCounter(Graphics2D g2) {
-        for (FoodVisual f : counter) {
-            g2.setColor(Color.WHITE);
-            g2.fillOval(f.x, f.y, 20, 14);
-            g2.setColor(new Color(200, 100, 80));
-            g2.fillOval(f.x + 4, f.y + 3, 12, 8);
-
-            g2.setColor(Color.BLACK);
-            g2.setFont(new Font("Arial", Font.PLAIN, 8));
-            g2.drawString("#" + f.clientId, f.x + 2, f.y - 2);
-        }
+        g2.fillOval(x + 3, y + 2, 10, 6);
     }
 
     private void drawCooks(Graphics2D g2) {
-        for (CookVisual c : cooks) {
-            drawCook(g2, c);
-        }
-    }
+        for (CookVisual cook : cooks) {
+            // Тело
+            g2.setColor(Color.WHITE);
+            g2.fillOval(cook.x - 10, cook.y, 20, 26);
 
-    private void drawCook(Graphics2D g2, CookVisual c) {
-        int x = c.x, y = c.y;
+            // Голова
+            g2.setColor(Constants.COLOR_SKIN);
+            g2.fillOval(cook.x - 7, cook.y - 14, 14, 14);
 
-        g2.setColor(c.color);
-        g2.fillOval(x - 12, y, 24, 30);
-
-        g2.setColor(new Color(255, 220, 185));
-        g2.fillOval(x - 9, y - 16, 18, 18);
-
-        g2.setColor(Color.WHITE);
-        g2.fillRect(x - 7, y - 28, 14, 14);
-        g2.fillOval(x - 9, y - 30, 18, 8);
-
-        if (c.isCooking) {
-            int offset = (c.animFrame / 5) % 3;
-            g2.setColor(new Color(255, 150, 50, 150));
-            g2.fillOval(x - 20 + offset, y + 20, 8, 8);
-            g2.fillOval(x + 12 - offset, y + 22, 6, 6);
-        }
-
-        g2.setColor(Color.WHITE);
-        g2.setFont(new Font("Arial", Font.BOLD, 9));
-        g2.drawString("П" + c.id, x - 6, y + 45);
-
-        if (c.currentDish != null) {
-            g2.setFont(new Font("Arial", Font.PLAIN, 8));
-            g2.setColor(new Color(255, 200, 100));
-            String dish = c.currentDish.length() > 6 ? c.currentDish.substring(0, 6) : c.currentDish;
-            g2.drawString(dish, x - 15, y + 55);
+            // Колпак
+            g2.setColor(Color.WHITE);
+            g2.fillRect(cook.x - 5, cook.y - 24, 10, 10);
+            g2.fillOval(cook.x - 7, cook.y - 26, 14, 6);
         }
     }
 
     private void drawWaiters(Graphics2D g2) {
         for (WaiterVisual w : waiters) {
-            drawWaiter(g2, w);
+            int x = (int) w.x;
+            int y = (int) w.y;
+
+            // Тень
+            g2.setColor(new Color(0, 0, 0, 40));
+            g2.fillOval(x - 8, y + 24, 16, 6);
+
+            // Тело
+            g2.setColor(w.color);
+            g2.fillOval(x - 9, y, 18, 24);
+
+            // Голова
+            g2.setColor(Constants.COLOR_SKIN);
+            g2.fillOval(x - 6, y - 12, 12, 12);
+
+            // Волосы
+            g2.setColor(new Color(60, 40, 20));
+            g2.fillArc(x - 6, y - 13, 12, 8, 0, 180);
+
+            // Поднос с едой
+            if (w.hasFood) {
+                g2.setColor(new Color(100, 100, 100));
+                g2.fillOval(x + 6, y + 2, 14, 5);
+                g2.setColor(new Color(200, 100, 70));
+                g2.fillOval(x + 8, y - 1, 10, 6);
+            }
+
+            // Номер
+            g2.setColor(Color.WHITE);
+            g2.setFont(new Font(Constants.FONT_NAME, Font.BOLD, 8));
+            g2.drawString(String.valueOf(w.id), x - 2, y + 15);
+
+            // Статус
+            String status = w.state.getDisplayName();
+            if (!status.isEmpty()) {
+                g2.setFont(new Font(Constants.FONT_NAME, Font.PLAIN, 7));
+                g2.setColor(new Color(80, 80, 80));
+                int textWidth = g2.getFontMetrics().stringWidth(status);
+                g2.drawString(status, x - textWidth / 2, y + 36);
+            }
         }
-    }
-
-    private void drawWaiter(Graphics2D g2, WaiterVisual w) {
-        int x = (int) w.x, y = (int) w.y;
-
-        g2.setColor(new Color(0, 0, 0, 40));
-        g2.fillOval(x - 10, y + 28, 20, 8);
-
-        g2.setColor(w.color);
-        g2.fillOval(x - 11, y, 22, 28);
-
-        g2.setColor(new Color(255, 220, 185));
-        g2.fillOval(x - 8, y - 14, 16, 16);
-
-        g2.setColor(new Color(60, 40, 20));
-        g2.fillArc(x - 8, y - 15, 16, 10, 0, 180);
-
-        g2.setColor(new Color(30, 30, 30));
-        g2.fillRect(x - 3, y + 2, 6, 4);
-
-        if (w.hasFood) {
-            g2.setColor(new Color(100, 100, 100));
-            g2.fillOval(x + 8, y + 3, 18, 7);
-            g2.setColor(new Color(200, 100, 70));
-            g2.fillOval(x + 11, y - 1, 12, 8);
-        }
-
-        g2.setColor(Color.WHITE);
-        g2.setFont(new Font("Arial", Font.BOLD, 9));
-        g2.drawString("" + w.id, x - 3, y + 18);
-
-        String status = getStatus(w);
-        g2.setFont(new Font("Arial", Font.PLAIN, 8));
-        g2.setColor(new Color(80, 80, 80));
-        int sw = g2.getFontMetrics().stringWidth(status);
-        g2.drawString(status, x - sw / 2, y + 42);
-    }
-
-    private String getStatus(WaiterVisual w) {
-        return switch (w.state) {
-            case GOING_TO_TABLE -> "К столу";
-            case GOING_TO_KITCHEN -> "На кухню";
-            case DELIVERING -> "Несёт";
-            case RETURNING -> "Назад";
-            case WAITING_FOR_FOOD -> "Ждёт";
-            default -> "Свободен";
-        };
     }
 
     private void drawLegend(Graphics2D g2) {
-        int x = 15, y = getHeight() - 25;
-        g2.setFont(new Font("Segoe UI", Font.PLAIN, 10));
+        int y = Constants.KITCHEN_Y + 115;
+        g2.setFont(new Font(Constants.FONT_NAME, Font.PLAIN, 9));
 
-        g2.setColor(new Color(100, 200, 100));
-        g2.fillOval(x, y, 10, 10);
-        g2.setColor(Color.BLACK);
-        g2.drawString("Клиент (готов)", x + 14, y + 9);
+        // Готов
+        g2.setColor(Constants.COLOR_CLIENT_READY);
+        g2.fillOval(15, y, 8, 8);
+        g2.setColor(Color.WHITE);
+        g2.drawString("Готов", 26, y + 7);
 
-        g2.setColor(new Color(255, 200, 100));
-        g2.fillOval(x + 100, y, 10, 10);
-        g2.setColor(Color.BLACK);
-        g2.drawString("Ждёт еду", x + 114, y + 9);
+        // Ждёт
+        g2.setColor(Constants.COLOR_CLIENT_WAITING);
+        g2.fillOval(70, y, 8, 8);
+        g2.setColor(Color.WHITE);
+        g2.drawString("Ждёт", 81, y + 7);
 
-        g2.setColor(new Color(65, 105, 225));
-        g2.fillOval(x + 190, y, 10, 10);
-        g2.setColor(Color.BLACK);
-        g2.drawString("Официант", x + 204, y + 9);
+        // VIP
+        g2.setColor(Constants.COLOR_CLIENT_VIP);
+        g2.fillOval(120, y, 8, 8);
+        g2.setColor(Color.WHITE);
+        g2.drawString("VIP", 131, y + 7);
+
+        // Официант
+        g2.setColor(Color.BLUE);
+        g2.fillOval(160, y, 8, 8);
+        g2.setColor(Color.WHITE);
+        g2.drawString("Официант", 171, y + 7);
     }
 }

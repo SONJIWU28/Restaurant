@@ -1,11 +1,14 @@
 import java.awt.Color;
 
+/**
+ * Визуальное представление повара.
+ */
 public class CookVisual {
-    public int id, x, y;
-    public Color color;
-    public boolean isCooking;
-    public String currentDish;
-    public int animFrame;
+    
+    public final int id;
+    public final int x;
+    public final int y;
+    public final Color color;
 
     public CookVisual(int id, int x, int y, Color color) {
         this.id = id;
