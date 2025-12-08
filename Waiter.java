@@ -35,7 +35,7 @@ public class Waiter implements Runnable {
     @Override
     public void run() {
         Thread.currentThread().setName("Официант-" + id);
-        System.out.println("[Официант-" + id + "] Начал смену");
+        Constants.log("[Официант-" + id + "] Начал смену");
 
         while (working.get() || !clientQueue.isEmpty()) {
             try {
@@ -46,7 +46,7 @@ public class Waiter implements Runnable {
             }
         }
         
-        System.out.println("[Официант-" + id + "] Закончил смену");
+        Constants.log("[Официант-" + id + "] Закончил смену");
     }
 
     private void processNextClient() throws InterruptedException {
@@ -57,7 +57,7 @@ public class Waiter implements Runnable {
             return;
         }
 
-        System.out.println("[Официант-" + id + "] Принял: " + request);
+        Constants.log("[Официант-" + id + "] Принял: " + request);
 
         // Ведём клиента к столу
         String vipFlag;
@@ -76,7 +76,10 @@ public class Waiter implements Runnable {
 
         // Отдаём заказ на кухню
         if (!kitchen.addOrder(order)) {
-            System.out.println("[Официант-" + id + "] Кухня отклонила заказ");
+            Constants.log("[Официант-" + id + "] Кухня отклонила заказ клиента " + request.clientId() + " — клиент уходит");
+            sendState("FAIL:" + request.clientId());
+            sendState("RETURN:" + request.clientId());
+            waitForArrival();
             return;
         }
         // Ждём готовности
@@ -89,7 +92,7 @@ public class Waiter implements Runnable {
             // Несём еду клиенту
             sendState("DELIVER:" + request.clientId());
             waitForArrival();
-            System.out.println("[Официант-" + id + "] Доставил: " + ready.getDish() + 
+            Constants.log("[Официант-" + id + "] Доставил: " + ready.getDish() + 
                 " клиенту " + ready.getClientId() + " (" + ready.getWaitTime() + " мс)");
 
             sendState("DONE:" + request.clientId());
@@ -99,7 +102,10 @@ public class Waiter implements Runnable {
             waitForArrival();
 
         } catch (CompletionException e) {
-            System.out.println("[Официант-" + id + "] Таймаут заказа для клиента " + request.clientId());
+            Constants.log("[Официант-" + id + "] Таймаут заказа для клиента " + request.clientId() + " — клиент уходит");
+            sendState("FAIL:" + request.clientId());
+            sendState("RETURN:" + request.clientId());
+            waitForArrival();
         }
     }
 
@@ -120,11 +126,11 @@ public class Waiter implements Runnable {
         try {
             arrivedSignal.get(Constants.WAITER_ARRIVAL_TIMEOUT_SEC, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
-            System.out.println("[Официант-" + id + "] Таймаут движения");
+            Constants.log("[Официант-" + id + "] Таймаут движения");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException e) {
-            System.out.println("[Официант-" + id + "] Ошибка: " + e.getMessage());
+            Constants.log("[Официант-" + id + "] Ошибка: " + e.getMessage());
         }
     }
 

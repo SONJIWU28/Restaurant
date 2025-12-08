@@ -1,7 +1,26 @@
 import java.awt.Color;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+
 public final class Constants {
 
     private Constants() {}
+
+    // ==================== ЛОГИРОВАНИЕ ====================
+    
+    private static final Object LOG_LOCK = new Object();
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+    
+    /**
+     * Потокобезопасное логирование с меткой времени.
+     * Гарантирует атомарность вывода и предотвращает перемешивание строк.
+     */
+    public static void log(String message) {
+        synchronized (LOG_LOCK) {
+            String timestamp = LocalTime.now().format(TIME_FORMAT);
+            System.out.println("[" + timestamp + "] " + message);
+        }
+    }
 
     // ==================== РЕСТОРАН ====================
     

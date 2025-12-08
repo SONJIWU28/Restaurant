@@ -27,7 +27,7 @@ public class ClientGenerator {
 
     public void start() {
         if (running.compareAndSet(false, true)) {
-            System.out.println("[КЛИЕНТЫ] Открыто (макс: " + maxClients + ")");
+            Constants.log("[КЛИЕНТЫ] Открыто (макс: " + maxClients + ")");
             scheduleNext();
         }
     }
@@ -66,13 +66,9 @@ public class ClientGenerator {
         if (VIP_PARTIES.get() > 0 || remaining < Constants.VIP_BATCH_MIN) {
             return false;
         }
-        
-        // В окне 40-60% — шанс 30%
         if (progress >= Constants.VIP_START_PROGRESS && progress <= Constants.VIP_END_PROGRESS) {
             return ThreadLocalRandom.current().nextDouble() < Constants.VIP_CHANCE;
         }
-        
-        // После 70% — гарантированный VIP
         return progress >= Constants.VIP_GUARANTEED_PROGRESS;
     }
 
@@ -82,7 +78,7 @@ public class ClientGenerator {
         int batchSize = ThreadLocalRandom.current().nextInt(Constants.VIP_BATCH_MIN, Constants.VIP_BATCH_MAX);
         batchSize = Math.min(batchSize, remaining);
         
-        System.out.println("[КЛИЕНТЫ] === VIP ПАРТИЯ (" + batchSize + " чел) ===");
+        Constants.log("[КЛИЕНТЫ] === VIP ПАРТИЯ (" + batchSize + " чел) ===");
         
         for (int i = 0; i < batchSize && CLIENT_ID.get() < maxClients; i++) {
             addClient(true);
@@ -117,9 +113,9 @@ public class ClientGenerator {
         }
 
         if (added) {
-            System.out.println("[КЛИЕНТЫ] " + request);
+            Constants.log("[КЛИЕНТЫ] " + request);
         } else {
-            System.out.println("[КЛИЕНТЫ] #" + id + " ушёл — очередь полная");
+            Constants.log("[КЛИЕНТЫ] #" + id + " ушёл — очередь полная");
         }
     }
 
@@ -140,7 +136,7 @@ public class ClientGenerator {
             Thread.currentThread().interrupt();
         }
         
-        System.out.println("[КЛИЕНТЫ] Закрыто");
+        Constants.log("[КЛИЕНТЫ] Закрыто");
     }
 
     public static void served() {

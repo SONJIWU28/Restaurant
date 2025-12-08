@@ -26,7 +26,7 @@ public class Kitchen {
     public void start() {
         if (open.compareAndSet(false, true)) {
             dispatcher.start();
-            System.out.println("[КУХНЯ] Открыта");
+            Constants.log("[КУХНЯ] Открыта");
         }
     }
 
@@ -43,9 +43,9 @@ public class Kitchen {
         
         if (accepted) {
             String loadStatus = getLoadStatus(queueSize);
-            System.out.println("[КУХНЯ] Принят: " + order + " | Очередь: " + queueSize + "/" + maxQueueSize + loadStatus);
+            Constants.log("[КУХНЯ] Принят: " + order + " | Очередь: " + queueSize + "/" + maxQueueSize + loadStatus);
         } else {
-            System.out.println("[КУХНЯ] Очередь полная, отклонён: " + order);
+            Constants.log("[КУХНЯ] Очередь полная, отклонён: " + order);
         }
         
         return accepted;
@@ -76,7 +76,7 @@ public class Kitchen {
                 Thread.currentThread().interrupt();
                 break;
             } catch (RejectedExecutionException e) {
-                System.out.println("[КУХНЯ] Повара перегружены");
+                Constants.log("[КУХНЯ] Повара перегружены");
                 break;
             }
         }
@@ -87,7 +87,7 @@ public class Kitchen {
      */
     private void cook(Order order) {
         String cookName = Thread.currentThread().getName();
-        System.out.println("[" + cookName + "] Готовит: " + order);
+        Constants.log("[" + cookName + "] Готовит: " + order);
         
         try {
             int cookTime = order.getDish().getTime();
@@ -97,17 +97,17 @@ public class Kitchen {
             
             Thread.sleep(cookTime);
             
-            System.out.println("[" + cookName + "] Готово: " + order + " (" + cookTime + " мс)");
+            Constants.log("[" + cookName + "] Готово: " + order + " (" + cookTime + " мс)");
             order.done();
             
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            System.out.println("[" + cookName + "] Прерван: " + order);
+            Constants.log("[" + cookName + "] Прерван: " + order);
         }
     }
 
     public void shutdown() {
-        System.out.println("[КУХНЯ] Закрывается...");
+        Constants.log("[КУХНЯ] Закрывается...");
         open.set(false);
         
         try {
@@ -116,14 +116,14 @@ public class Kitchen {
             
             if (!cookPool.awaitTermination(10, TimeUnit.SECONDS)) {
                 cookPool.shutdownNow();
-                System.out.println("[КУХНЯ] Принудительное завершение");
+                Constants.log("[КУХНЯ] Принудительное завершение");
             }
         } catch (InterruptedException e) {
             cookPool.shutdownNow();
             Thread.currentThread().interrupt();
         }
         
-        System.out.println("[КУХНЯ] Закрыта");
+        Constants.log("[КУХНЯ] Закрыта");
     }
 
     public boolean isOpen() {

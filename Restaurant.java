@@ -53,8 +53,8 @@ public class Restaurant {
         Order.reset();
         ClientGenerator.reset();
 
-        System.out.println("========== РЕСТОРАН ОТКРЫТ ==========");
-        System.out.println("Поваров: " + cookCount + ", Официантов: " + waiterCount + ", Клиентов: " + maxClients);
+        Constants.log("========== РЕСТОРАН ОТКРЫТ ==========");
+        Constants.log("Поваров: " + cookCount + ", Официантов: " + waiterCount + ", Клиентов: " + maxClients);
 
         // Создаём очередь клиентов
         clientQueue = new LinkedBlockingDeque<>(clientQueueSize);
@@ -88,9 +88,9 @@ public class Restaurant {
             return;
         }
 
-        System.out.println("========== ЗАКРЫВАЕТСЯ ==========");
-        System.out.println("В очереди клиентов: " + clientQueue.size());
-        System.out.println("В очереди кухни: " + kitchen.getQueueSize());
+        Constants.log("========== ЗАКРЫВАЕТСЯ ==========");
+        Constants.log("В очереди клиентов: " + clientQueue.size());
+        Constants.log("В очереди кухни: " + kitchen.getQueueSize());
 
         // Останавливаем генератор
         clientGenerator.shutdown();
@@ -105,7 +105,7 @@ public class Restaurant {
             try {
                 thread.join(30000);
                 if (thread.isAlive()) {
-                    System.out.println("Поток " + thread.getName() + " не завершился");
+                    Constants.log("Поток " + thread.getName() + " не завершился");
                     thread.interrupt();
                 }
             } catch (InterruptedException e) {
@@ -121,7 +121,7 @@ public class Restaurant {
         waiterThreads.clear();
         running = false;
 
-        System.out.println("========== ЗАКРЫТ ==========");
+        Constants.log("========== ЗАКРЫТ ==========");
     }
 
     public void runFor(long milliseconds) throws InterruptedException {

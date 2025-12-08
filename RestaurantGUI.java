@@ -353,6 +353,12 @@ public class RestaurantGUI extends JFrame implements Waiter.WaiterCallback {
                     .execute(() -> TableManager.releaseSeat(tables, cid));
             }
             
+            case "FAIL" -> {
+                TableManager.releaseSeat(tables, clientId);
+                w.hasFood = false;
+                w.awaitingArrival = false;
+            }
+            
             case "RETURN" -> {
                 w.state = WaiterState.RETURNING;
                 w.targetX = w.homeX;
